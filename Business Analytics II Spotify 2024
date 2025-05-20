@@ -1,0 +1,75 @@
+# 1. Import the required libraries
+
+library(rjson)
+library(jsonlite)
+library(lubridate)
+library(gghighlight)
+library(tidyverse)
+library(knitr)
+library(ggdark)
+library(plotly)
+
+# 2. Import the files
+
+## We have two spotify json files, one until August and another until December
+## Import the files separately with the needed adjustments
+file.exists("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_0.json")
+file_content1 <- readLines("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_0.json")
+parsed_data1 <- fromJSON(paste(file_content1, collapse = " "))
+streaminghistory1 <- parsed_data1 %>% bind_rows()
+
+file.exists("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_1.json")
+file_content2 <- readLines("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_1.json")
+parsed_data2 <- fromJSON(paste(file_content2, collapse = " "))
+streaminghistory2 <- parsed_data2 %>% bind_rows()
+
+## Merge the files and check how it looks
+streaminghistorymerged <- bind_rows(streaminghistory1, streaminghistory2)
+View(streaminghistorymerged)
+str(streaminghistorymerged)
+
+# 3. Clean data
+### doing things differently with lubridate
+## separating the column endtime into different columns with different info
+## too much information on the column endtime!
+streaminghistorymerged <- streaminghistorymerged %>%
+  mutate(
+    endTime = ymd_hm(endTime),
+    year = year(endTime),
+    month = month(endTime),
+    day = day(endTime),
+    weekday = wday(endTime, label = TRUE),
+    hour = hour(endTime),
+    minute = minute(endTime))
+
+## locale settings to English: they appeared in my device's language
+Sys.setlocale("LC_TIME", "English")
+
+## reorder weekday to start on Monday instead of Sunday
+streaminghistorymerged$weekday <- factor(
+  streaminghistorymerged$weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri",
+                                             "Sat", "Sun"))
+
+## reordering columns for clarity - with native subsetting!
+streaminghistorymerged <- streaminghistorymerged[, c("year", "month", "day",
+                                                     "weekday", "hour",
+                                                     "minute", "artistName",
+                                                     "trackName", "msPlayed")]
+
+## filtering by year: removing 2023 data - with native subsetting!
+streaming2024 <- streaminghistorymerged[streaminghistorymerged$year == 2024, ]
+
+## remove the "year" column since it's now redundant - with native subsetting!
+streaming2024 <- streaming2024[, -1] # 
+
+## further cleaning: NA values, duplicates, "unknowns"
+
+anyNA(streaming2024)
+[1] FALSE
+
+unknownartists <- streaming2024[streaming2024$artistName == "Unknown", ]
+unknowntracks <- streaming2024[streaming2024$trackName == "Unknown", ]
+#this didnt give anything
+
+wider <- pivot_wider(streaming2024, names_from = hour, values_from = hour)
+#this didnt give anything
