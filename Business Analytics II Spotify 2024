@@ -29,6 +29,7 @@ View(streaminghistorymerged)
 str(streaminghistorymerged)
 
 # 3. Clean data
+
 ### doing things differently with lubridate
 ## separating the column endtime into different columns with different info
 ## too much information on the column endtime!
@@ -62,14 +63,34 @@ streaming2024 <- streaminghistorymerged[streaminghistorymerged$year == 2024, ]
 ## remove the "year" column since it's now redundant - with native subsetting!
 streaming2024 <- streaming2024[, -1] # 
 
-## further cleaning: NA values, duplicates, "unknowns"
+## NA values
+anyNA(streaming2024) # gave FALSE
+summary(is.na(streaming2024)) # gave FALSE
 
-anyNA(streaming2024)
-[1] FALSE
+## unknowns:
+unknownartists <- streaming2024[streaming2024$artistName == "Unknown Artist", ]
+unknowntracks <- streaming2024[streaming2024$trackName == "Unknown Track", ]
+identical(unknownartists, unknowntracks) # gave TRUE, play View, head, summary
+# we decided to get rid of the 140 unknowns since there's really no conclusion we can get
+streaming2024 <- streaming2024[!(streaming2024$artistName == "Unknown Artist" &
+                                   streaming2024$trackName == "Unknown Track"), ]
+  
+## adding columns seconds, minutes and hours
+streaming2024 <- streaming2024 %>%
+  mutate(seconds = round(msPlayed / 1000, 2),
+         minutes = round(msPlayed / 60000, 3))
 
-unknownartists <- streaming2024[streaming2024$artistName == "Unknown", ]
-unknowntracks <- streaming2024[streaming2024$trackName == "Unknown", ]
-#this didnt give anything
+## remove those rows where msPlayed = 0 - we count them as not played
+streaming2024 <- streaming2024[streaming2024$msPlayed != 0, ]
 
-wider <- pivot_wider(streaming2024, names_from = hour, values_from = hour)
-#this didnt give anything
+## using the same logic, remove those rows where seconds < 10 - we count them as skips
+streaming2024 <- streaming2024[streaming2024$seconds >= 10, ]
+
+##duplicates
+duplicates <- streaming2024 %>%
+  group_by(artistName, trackName, month, day, hour, minute) %>%
+  filter(n() > 1) %>%
+  arrange(month, day, hour, minute)
+## we tested thresholds of 5, 10, 20 seconds - we get the same results on the subset and on the duplis
+## 22 duplicates (11 songs), dupli length between 10 and 60 seconds, not real skips
+## we continue to consider them on the dataset
