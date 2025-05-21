@@ -9,6 +9,10 @@ library(knitr)
 library(ggdark)
 library(plotly)
 
+readlines(readr which is TIDYVERSE)
+fromJSON(jsonlite)
+
+
 # 2. Import the files
 
 ## We have two spotify json files, one until August and another until December
@@ -28,7 +32,7 @@ streaming2024Paula <- bind_rows(streaminghistory1, streaminghistory2)
 View(streaming2024Paula)
 str(streaming2024Paula)
 
-# 3. Clean data
+# 3. Clean both datasets from Paula and Emma
 
 ### doing things differently with lubridate
 ## separating the column endtime into different columns with different info
@@ -131,7 +135,6 @@ identical(unknownartistsEmma, unknowntracksEmma) # gave TRUE, play View, head, s
 # we decided to get rid of the 5 unknowns since there's really no conclusion we can get
 streaming2024Emma <- streaming2024Emma[!(streaming2024Emma$artistName == "Unknown Artist" &
                                            streaming2024Emma$trackName == "Unknown Track"), ]
-
 streaming2024Emma <- streaming2024Emma %>%
   mutate(seconds = round(msPlayed / 1000, 2),
          minutes = round(msPlayed / 60000, 3))
@@ -151,3 +154,38 @@ streaming2024Paula <- streaming2024Paula[
 streaming2024Emma <- streaming2024Emma[
   (streaming2024Emma$month < 12) |
     (streaming2024Emma$month == 12 & streaming2024Emma$day <=17), ]
+
+# 5. Import and clean the extra file: most streamed spotify songs 2024
+library(readr)
+Most_Streamed_Spotify_Songs_2024 <- read_csv("Most Streamed Spotify Songs 2024.csv")
+Most_Streamed_Spotify_Songs_2024 <- Most_Streamed_Spotify_Songs_2024[, c(
+  "Artist", "Track", "All Time Rank", "Spotify Streams")]
+Most_Streamed_Spotify_Songs_2024 <- Most_Streamed_Spotify_Songs_2024[1:100, ]
+anyNA(Most_Streamed_Spotify_Songs_2024) #gave TRUE
+summary(is.na(Most_Streamed_Spotify_Songs_2024)) # gave 4 streams
+NAs <- Most_Streamed_Spotify_Songs_2024[is.na(Most_Streamed_Spotify_Songs_2024$`Spotify Streams`), ]
+## not that important for analysis we decided to keep them in the dataset
+duplicatesGlobal <- Most_Streamed_Spotify_Songs_2024 %>%
+  group_by(Artist, Track, `All Time Rank`, `Spotify Streams`) %>%
+  filter(n() > 1) %>%
+  arrange(Artist, Track, `All Time Rank`, `Spotify Streams`)
+## no duplicates found
+
+# 6. Build the Artists data frame
+
+## Source: https://chartmasters.org/community/records/spotify-most-streamed-artists-2024/
+Most_Streamed_Spotify_Artists_2024 <- data.frame(c(1:37),
+  c("Taylor Swift", "The Weeknd", "Drake", "Bad Bunny", "Billie Eilish",
+    "Ariana Grande", "Kanye West", "Peso Pluma", "Travis Scott", "Bruno Mars",
+    "Eminem", "Sabrina Carpenter", "Lana del Rey", "Arijit Singh", "Karol G",
+    "Feid", "Kendrick Lamar", "SZA", "Coldplay", "Junior H", "Zach Bryan",
+    "Rihanna", "Justin Bieber", "Morgan Wallen", "Fuerza Regida", "Post Malone",
+    "Natanael Cano", "Rauw Alejandro", "Pritam", "Metro Boomin", "Olivia Rodrigo",
+    "Dua Lipa", "David Guetta", "Linkin Park", "Lady Gaga", "Imagine Dragons",
+    "Ed Sheeran"),
+  c(28.21, 13.27, 12.11, 12.08, 12.00, 10.03, 9.67, 9.38, 8.41, 8.36, 8.12,
+    7.84, 7.73, 7.72, 7.64, 7.61, 6.91, 6.84, 6.75, 6.75, 6.72, 6.49, 6.39,
+    6.34, 6.30, 6.29, 6.12, 6.08, 5.99, 5.91, 5.85, 5.74, 5.72, 5.68, 5.63,
+    5.26, 5.00))
+colnames(Most_Streamed_Spotify_Artists_2024) <- c("Order", "Artist",
+                                "Number of streams in billion")
