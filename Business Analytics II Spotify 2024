@@ -24,16 +24,16 @@ parsed_data2 <- fromJSON(paste(file_content2, collapse = " "))
 streaminghistory2 <- parsed_data2 %>% bind_rows()
 
 ## Merge the files and check how it looks
-streaminghistorymerged <- bind_rows(streaminghistory1, streaminghistory2)
-View(streaminghistorymerged)
-str(streaminghistorymerged)
+streaming2024Paula <- bind_rows(streaminghistory1, streaminghistory2)
+View(streaming2024Paula)
+str(streaming2024Paula)
 
 # 3. Clean data
 
 ### doing things differently with lubridate
 ## separating the column endtime into different columns with different info
 ## too much information on the column endtime!
-streaminghistorymerged <- streaminghistorymerged %>%
+streaming2024Paula <- streaming2024Paula %>%
   mutate(
     endTime = ymd_hm(endTime),
     year = year(endTime),
@@ -47,50 +47,107 @@ streaminghistorymerged <- streaminghistorymerged %>%
 Sys.setlocale("LC_TIME", "English")
 
 ## reorder weekday to start on Monday instead of Sunday
-streaminghistorymerged$weekday <- factor(
-  streaminghistorymerged$weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri",
-                                             "Sat", "Sun"))
+streaming2024Paula$weekday <- factor(streaming2024Paula$weekday, levels = c(
+  "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
 
 ## reordering columns for clarity - with native subsetting!
-streaminghistorymerged <- streaminghistorymerged[, c("year", "month", "day",
-                                                     "weekday", "hour",
-                                                     "minute", "artistName",
-                                                     "trackName", "msPlayed")]
+streaming2024Paula <- streaming2024Paula[, c("year", "month", "day", "weekday",
+                                             "hour", "minute", "artistName",
+                                             "trackName", "msPlayed")]
 
 ## filtering by year: removing 2023 data - with native subsetting!
-streaming2024 <- streaminghistorymerged[streaminghistorymerged$year == 2024, ]
+streaming2024Paula <- streaming2024Paula[streaming2024Paula$year == 2024, ]
 
 ## remove the "year" column since it's now redundant - with native subsetting!
-streaming2024 <- streaming2024[, -1] # 
+streaming2024Paula <- streaming2024Paula[, -1] # 
 
 ## NA values
-anyNA(streaming2024) # gave FALSE
-summary(is.na(streaming2024)) # gave FALSE
+anyNA(streaming2024Paula) # gave FALSE
+summary(is.na(streaming2024Paula)) # gave FALSE
 
 ## unknowns:
-unknownartists <- streaming2024[streaming2024$artistName == "Unknown Artist", ]
-unknowntracks <- streaming2024[streaming2024$trackName == "Unknown Track", ]
-identical(unknownartists, unknowntracks) # gave TRUE, play View, head, summary
+unknownartistsPaula <- streaming2024Paula[streaming2024Paula$artistName == "Unknown Artist", ]
+unknowntracksPaula <- streaming2024Paula[streaming2024Paula$trackName == "Unknown Track", ]
+identical(unknownartistsPaula, unknowntracksPaula) # gave TRUE, play View, head, summary
 # we decided to get rid of the 140 unknowns since there's really no conclusion we can get
-streaming2024 <- streaming2024[!(streaming2024$artistName == "Unknown Artist" &
-                                   streaming2024$trackName == "Unknown Track"), ]
+streaming2024Paula <- streaming2024Paula[!(streaming2024Paula$artistName == "Unknown Artist" &
+                                   streaming2024Paula$trackName == "Unknown Track"), ]
   
 ## adding columns seconds, minutes and hours
-streaming2024 <- streaming2024 %>%
+streaming2024Paula <- streaming2024Paula %>%
   mutate(seconds = round(msPlayed / 1000, 2),
          minutes = round(msPlayed / 60000, 3))
 
 ## remove those rows where msPlayed = 0 - we count them as not played
-streaming2024 <- streaming2024[streaming2024$msPlayed != 0, ]
+streaming2024Paula <- streaming2024Paula[streaming2024Paula$msPlayed != 0, ]
 
 ## using the same logic, remove those rows where seconds < 10 - we count them as skips
-streaming2024 <- streaming2024[streaming2024$seconds >= 10, ]
+streaming2024Paula <- streaming2024Paula[streaming2024Paula$seconds >= 10, ]
 
 ##duplicates
-duplicates <- streaming2024 %>%
+duplicatesPaula <- streaming2024Paula %>%
   group_by(artistName, trackName, month, day, hour, minute) %>%
   filter(n() > 1) %>%
   arrange(month, day, hour, minute)
-## we tested thresholds of 5, 10, 20 seconds - we get the same results on the subset and on the duplis
-## 22 duplicates (11 songs), dupli length between 10 and 60 seconds, not real skips
+# not real skips, we continue to consider them on the dataset
+
+# 4. Repeat the process with Emma's dataset
+
+file.exists("~/MA IB & ED/Semester 2/Business Analytics II/Project/Project Semester2/spotify1Emma.json")
+file_content3 <- readLines("~/MA IB & ED/Semester 2/Business Analytics II/Project/Project Semester2/spotify1Emma.json")
+parsed_data3 <- fromJSON(paste(file_content3, collapse = " "))
+streaming2024Emma <- parsed_data3 %>% bind_rows()
+
+streaming2024Emma <- streaming2024Emma %>%
+  mutate(
+    endTime = ymd_hm(endTime),
+    year = year(endTime),
+    month = month(endTime),
+    day = day(endTime),
+    weekday = wday(endTime, label = TRUE),
+    hour = hour(endTime),
+    minute = minute(endTime))
+
+Sys.setlocale("LC_TIME", "English")
+
+streaming2024Emma$weekday <- factor(
+  streaming2024Emma$weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri",
+                                             "Sat", "Sun"))
+
+streaming2024Emma <- streaming2024Emma[, c("year", "month", "day", "weekday",
+                                           "hour", "minute", "artistName",
+                                           "trackName", "msPlayed")]
+
+streaming2024Emma <- streaming2024Emma[streaming2024Emma$year == 2024, ]
+streaming2024Emma <- streaming2024Emma[, -1]
+
+
+anyNA(streaming2024Emma) # gave FALSE
+summary(is.na(streaming2024Emma)) # gave FALSE
+
+unknownartistsEmma <- streaming2024Emma[streaming2024Emma$artistName == "Unknown Artist", ]
+unknowntracksEmma <- streaming2024Emma[streaming2024Emma$trackName == "Unknown Track", ]
+identical(unknownartistsEmma, unknowntracksEmma) # gave TRUE, play View, head, summary
+# we decided to get rid of the 5 unknowns since there's really no conclusion we can get
+streaming2024Emma <- streaming2024Emma[!(streaming2024Emma$artistName == "Unknown Artist" &
+                                           streaming2024Emma$trackName == "Unknown Track"), ]
+
+streaming2024Emma <- streaming2024Emma %>%
+  mutate(seconds = round(msPlayed / 1000, 2),
+         minutes = round(msPlayed / 60000, 3))
+streaming2024Emma <- streaming2024Emma[streaming2024Emma$msPlayed != 0, ]
+streaming2024Emma <- streaming2024Emma[streaming2024Emma$seconds >= 10, ]
+duplicatesEmma <- streaming2024Emma %>%
+  group_by(artistName, trackName, month, day, hour, minute) %>%
+  filter(n() > 1) %>%
+  arrange(month, day, hour, minute)
 ## we continue to consider them on the dataset
+
+## one final cleaning: Paula's dataset spans until December 17, Emma's dataset starts on March 18th
+## we filter the datasets so that they include data only from March 18 to December 17
+streaming2024Paula <- streaming2024Paula[
+  (streaming2024Paula$month > 3) |
+    (streaming2024Paula$month == 3 & streaming2024Paula$day >=18), ]
+streaming2024Emma <- streaming2024Emma[
+  (streaming2024Emma$month < 12) |
+    (streaming2024Emma$month == 12 & streaming2024Emma$day <=17), ]
