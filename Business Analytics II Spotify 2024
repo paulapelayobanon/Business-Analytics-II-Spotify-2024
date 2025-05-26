@@ -1,3 +1,9 @@
+### SPOTIFY WRAPPED 2024 - AN ANALYSIS ###
+
+# The goal of this project is to perform an analysis on Spotify's raw data
+# to check on another end the data displayed officially by Spotify and get
+# advanced insights from the file
+
 # 1. Import the required libraries
 
 library(rjson)
@@ -8,9 +14,13 @@ library(tidyverse)
 library(knitr)
 library(ggdark)
 library(plotly)
+library(prophet)
+library(forecast)
 
 readlines(readr which is TIDYVERSE)
 fromJSON(jsonlite)
+
+Sys.setlocale("LC_TIME", "English")
 
 
 # 2. Import the files
@@ -189,3 +199,85 @@ Most_Streamed_Spotify_Artists_2024 <- data.frame(c(1:37),
     5.26, 5.00))
 colnames(Most_Streamed_Spotify_Artists_2024) <- c("Order", "Artist",
                                 "Number of streams in billion")
+
+# 7. ANALYSIS
+
+# Time Series Analysis
+## using the prophet package
+### convert the data back to a date format using lubridate 
+### aggregate data for every day
+prophetPaula <- streaming2024Paula %>%
+  mutate(ds = make_datetime(year = 2024, month = month, day = day)) %>%
+  select(ds, everything()) %>%
+  select(-month, -day, -weekday, -seconds, -msPlayed) %>%
+  group_by(ds) %>%
+  summarize(y = sum(minutes)) %>%
+  ungroup()
+prophetEmma <- streaming2024Emma %>%
+  mutate(ds = make_datetime(year = 2024, month = month, day = day)) %>%
+  select(ds, everything()) %>%
+  select(-month, -day, -weekday, -seconds, -msPlayed) %>%
+  group_by(ds) %>%
+  summarize(y = sum(minutes)) %>%
+  ungroup()
+# now the data is prepared to be understood by the prophet package
+modelPaula <- prophet(prophetPaula)
+modelPaula$params
+futurePaula <- make_future_dataframe(modelPaula, 259, freq = "day")
+forecastPaula <- predict(modelPaula, futurePaula)
+plot(modelPaula, forecastPaula)
+prophet_plot_components(modelPaula, forecastPaula)
+dyplot.prophet(modelPaula, forecastPaula)
+
+modelEmma <- prophet(prophetEmma)
+futureEmma <- make_future_dataframe(modelEmma, 259, freq = "day")
+forecastEmma <- predict(modelEmma, futureEmma)
+plot(modelEmma, forecastEmma)
+prophet_plot_components(modelEmma, forecastEmma)
+dyplot.prophet(modelEmma, forecastEmma)
+
+
+
+
+
+
+## tsibble
+tsPaula <- prophetPaula %>%
+  mutate(ds = as_date(ds)) %>%
+  as_tsibble(index = ds)
+tsEmma <- prophetEmma %>%
+  mutate(ds = as_date(ds)) %>%
+  as_tsibble(index = ds)
+ggplot() +
+  geom_line(data = tsPaula, aes(ds, y, color = "Paula")) +
+  geom_line(data = tsEmma, aes(ds, y, color = "Emma"))
+ 
+
+# Venn Diagrams
+VennArtists <- list(Paula = unique(streaming2024Paula$artistName),
+                    Emma = unique(streaming2024Emma$artistName),
+                    Global = Most_Streamed_Spotify_Artists_2024$Artist)
+ggvenn(VennArtists, fill_color = c("blue", "red", "green")) +
+  labs(title = "2024 Artists Venn Diagram")
+
+VennSongs <- list(Paula = unique(streaming2024Paula$trackName),
+                  Emma = unique(streaming2024Emma$trackName),
+                  Global = Most_Streamed_Spotify_Songs_2024$Track)
+ggvenn(VennSongs, fill_color = c("blue", "red", "green")) +
+  labs(title = "2024 Songs Venn Diagram")
+# try function geom_venn with ggplot2
+
+commonartists <- intersect(intersect(unique(streaming2024Paula$artistName),
+                  unique(streaming2024Emma$artistName)),
+                  unique(Most_Streamed_Spotify_Artists_2024$Artist))
+commonartists <- data.frame(commonartists)
+commonartistsgirls <- data.frame(intersect(unique(streaming2024Paula$artistName),
+                                unique(streaming2024Emma$artistName)))
+
+commonsongs <- intersect(intersect(
+  unique(streaming2024Paula$trackName),
+  unique(streaming2024Emma$trackName)),
+  unique(Most_Streamed_Spotify_Songs_2024$Track))
+commonsongs <- data.frame(commonsongs)
+commonsongsgirls <- data.frame(intersect(unique(streaming2024Paula$trackName),
+                                         unique(streaming2024Emma$trackName)))
