@@ -1,9 +1,3 @@
-### SPOTIFY WRAPPED 2024 - AN ANALYSIS ###
-
-# The goal of this project is to perform an analysis on Spotify's raw data
-# to check on another end the data displayed officially by Spotify and get
-# advanced insights from the file
-
 # 1. Import the required libraries
 
 library(rjson)
@@ -281,3 +275,46 @@ commonsongs <- intersect(intersect(
 commonsongs <- data.frame(commonsongs)
 commonsongsgirls <- data.frame(intersect(unique(streaming2024Paula$trackName),
                                          unique(streaming2024Emma$trackName)))
+
+# Density Ridge Plot
+combinedstreaming2024month <- bind_rows(
+  prophetPaula %>% mutate(user = "Paula"),
+  prophetEmma %>% mutate(user = "Emma")) %>%
+  mutate(date = as_date(ds), day_of_month = day(ds),
+         month = month(ds, label = TRUE, abbr = FALSE))
+
+ggplot(combinedstreaming2024month, aes(x = y, y = month, fill = user)) +
+  geom_density_ridges(alpha = 0.4) +
+  scale_fill_manual(values = c("Paula" = "#87CEEB", "Emma" = "#D58A94"), name = "User") +
+  scale_x_continuous(breaks = seq(0, 500, by = 30)) +
+  labs(title = "Paula vs Emma Streaming", x = "Minutes of Streaming") +
+  theme_ridges() +
+  theme(legend.position = "none")
+
+# Top10 songs
+top10Emma <- streaming2024Emma %>%
+  group_by(artistName, trackName) %>%
+  summarize(total_mins = sum(minutes), .groups = "drop") %>%
+  arrange(desc(total_mins)) %>%
+  mutate(total_hours = round(total_mins / 60, 2)) %>%
+  slice_head(n =10)
+top10Paula <- streaming2024Paula %>%
+  group_by(artistName, trackName) %>%
+  summarize(total_mins = sum(minutes), .groups = "drop") %>%
+  arrange(desc(total_mins)) %>%
+  mutate(total_hours = round(total_mins / 60, 2)) %>%
+  slice_head(n =10)
+
+ggplot(top10Emma, aes(x = reorder(trackName, total_mins), y = total_mins)) +
+  geom_segment(aes(xend = trackName, yend = 0),
+               color = "#FF9AA2", linewidth = 1.5) +
+  geom_point(size = 8, color = "#FFB7B2", alpha = 0.9) +
+  geom_text(aes(label = paste0(round(total_hours, 1), "h")), 
+            color = "white", size = 3) +
+  coord_flip() +
+  labs(title = "Emma's Top 10 Most-Listened Tracks",
+       subtitle = "Total listening time in hours",
+       x = "", y = "Minutes") +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#FF85A2"),
+        panel.grid.major.y = element_blank())
