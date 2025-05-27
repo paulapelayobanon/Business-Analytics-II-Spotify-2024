@@ -1,3 +1,9 @@
+### SPOTIFY WRAPPED 2024 - AN ANALYSIS ###
+
+# The goal of this project is to perform an analysis on Spotify's raw data
+# to check on another end the data displayed officially by Spotify and get
+# advanced insights from the file
+
 # 1. Import the required libraries
 
 library(rjson)
@@ -7,9 +13,11 @@ library(gghighlight)
 library(tidyverse)
 library(knitr)
 library(ggdark)
+library(ggthemes)
 library(plotly)
 library(prophet)
 library(forecast)
+library(ggvenn)
 
 readlines(readr which is TIDYVERSE)
 fromJSON(jsonlite)
@@ -36,7 +44,7 @@ streaming2024Paula <- bind_rows(streaminghistory1, streaminghistory2)
 View(streaming2024Paula)
 str(streaming2024Paula)
 
-# 3. Clean both datasets from Paula and Emma
+#### CLEANING RAW DATASETS ####
 
 ### doing things differently with lubridate
 ## separating the column endtime into different columns with different info
@@ -159,7 +167,7 @@ streaming2024Emma <- streaming2024Emma[
   (streaming2024Emma$month < 12) |
     (streaming2024Emma$month == 12 & streaming2024Emma$day <=17), ]
 
-# 5. Import and clean the extra file: most streamed spotify songs 2024
+# 5. Import and clean the Songs data frame
 library(readr)
 Most_Streamed_Spotify_Songs_2024 <- read_csv("Most Streamed Spotify Songs 2024.csv")
 Most_Streamed_Spotify_Songs_2024 <- Most_Streamed_Spotify_Songs_2024[, c(
@@ -175,79 +183,118 @@ duplicatesGlobal <- Most_Streamed_Spotify_Songs_2024 %>%
   arrange(Artist, Track, `All Time Rank`, `Spotify Streams`)
 ## no duplicates found
 
-# 6. Build the Artists data frame
-
+# 6. Import and clean the Artists data frame
 ## Source: https://chartmasters.org/community/records/spotify-most-streamed-artists-2024/
-Most_Streamed_Spotify_Artists_2024 <- data.frame(c(1:37),
-  c("Taylor Swift", "The Weeknd", "Drake", "Bad Bunny", "Billie Eilish",
-    "Ariana Grande", "Kanye West", "Peso Pluma", "Travis Scott", "Bruno Mars",
-    "Eminem", "Sabrina Carpenter", "Lana del Rey", "Arijit Singh", "Karol G",
-    "Feid", "Kendrick Lamar", "SZA", "Coldplay", "Junior H", "Zach Bryan",
-    "Rihanna", "Justin Bieber", "Morgan Wallen", "Fuerza Regida", "Post Malone",
-    "Natanael Cano", "Rauw Alejandro", "Pritam", "Metro Boomin", "Olivia Rodrigo",
-    "Dua Lipa", "David Guetta", "Linkin Park", "Lady Gaga", "Imagine Dragons",
-    "Ed Sheeran"),
-  c(28.21, 13.27, 12.11, 12.08, 12.00, 10.03, 9.67, 9.38, 8.41, 8.36, 8.12,
-    7.84, 7.73, 7.72, 7.64, 7.61, 6.91, 6.84, 6.75, 6.75, 6.72, 6.49, 6.39,
-    6.34, 6.30, 6.29, 6.12, 6.08, 5.99, 5.91, 5.85, 5.74, 5.72, 5.68, 5.63,
-    5.26, 5.00))
-colnames(Most_Streamed_Spotify_Artists_2024) <- c("Order", "Artist",
-                                "Number of streams in billion")
+library(readr)
+Most_Streamed_Spotify_Artists_2024 <- read_delim(
+  "Most Streamed Spotify Artists 2024.csv",
+  +     delim = ";", escape_double = FALSE, trim_ws = TRUE)
+colnames(Most_Streamed_Spotify_Artists_2024) <- c("Rank", "Artist",
+                                                  "Spotify Streams")
+Most_Streamed_Spotify_Artists_2024 <- Most_Streamed_Spotify_Artists_2024[
+  2:38, ]
 
-# 7. ANALYSIS
+#### ANALYSIS ####
 
-# Time Series Analysis
-## using the prophet package
-### convert the data back to a date format using lubridate 
-### aggregate data for every day
-prophetPaula <- streaming2024Paula %>%
-  mutate(ds = make_datetime(year = 2024, month = month, day = day)) %>%
-  select(ds, everything()) %>%
+## Statistical analysis: figure out the distribution type, aggregate data
+## new variables dailyPaula and dailyEmma with just date and minutes
+dailyPaula <- streaming2024Paula %>%
+  mutate(date = make_datetime(year = 2024, month = month, day = day)) %>%
+  select(date, everything()) %>%
   select(-month, -day, -weekday, -seconds, -msPlayed) %>%
-  group_by(ds) %>%
-  summarize(y = sum(minutes)) %>%
+  group_by(date) %>%
+  summarize(dailyjam = sum(minutes)) %>%
   ungroup()
-prophetEmma <- streaming2024Emma %>%
-  mutate(ds = make_datetime(year = 2024, month = month, day = day)) %>%
-  select(ds, everything()) %>%
+dailyEmma <- streaming2024Emma %>%
+  mutate(date = make_datetime(year = 2024, month = month, day = day)) %>%
+  select(date, everything()) %>%
   select(-month, -day, -weekday, -seconds, -msPlayed) %>%
-  group_by(ds) %>%
-  summarize(y = sum(minutes)) %>%
+  group_by(date) %>%
+  summarize(dailyjam = sum(minutes)) %>%
   ungroup()
-# now the data is prepared to be understood by the prophet package
-modelPaula <- prophet(prophetPaula)
-modelPaula$params
-futurePaula <- make_future_dataframe(modelPaula, 259, freq = "day")
-forecastPaula <- predict(modelPaula, futurePaula)
-plot(modelPaula, forecastPaula)
-prophet_plot_components(modelPaula, forecastPaula)
-dyplot.prophet(modelPaula, forecastPaula)
+## create a HISTOGRAM with dailyEmma and dailyPaula
+ggplot(dailyEmma, aes(x = dailyjam)) +
+  geom_histogram(bins = 25, fill = "red", color = "white") +
+  labs(x = "Minutes listened per day", y = "Number of days") +
+  theme_clean() +
+  labs(title ="Emma's histogram")
+### Emma's looks like a right-skewed distribution, more or less
+ggplot(dailyPaula, aes(x = dailyjam)) +
+  geom_histogram(bins = 25, fill = "blue", color = "white") +
+  labs(x = "Minutes listened per day", y = "Number of days") +
+  theme_clean() +
+  labs(title = "Paula's histogram")
+### Paula's too but with a bit of a second mode
 
-modelEmma <- prophet(prophetEmma)
-futureEmma <- make_future_dataframe(modelEmma, 259, freq = "day")
-forecastEmma <- predict(modelEmma, futureEmma)
-plot(modelEmma, forecastEmma)
-prophet_plot_components(modelEmma, forecastEmma)
-dyplot.prophet(modelEmma, forecastEmma)
+#create a QQPLOT
+ggplot(dailyEmma, aes(sample = dailyjam)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_clean() +
+  labs(title = "Emma's QQ plot")
+### curves to the left, not exactly a straight line
+ggplot(dailyPaula, aes(sample = dailyjam)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_clean() +
+  labs(title = "Paula's QQ plot")
+### curves to the left, not exactly a straight line
+
+##run the SHAPIRO TEST
+shapiro.test(dailyEmma$dailyjam) # W = 0.83138, p-value = 7.257e-15 FAILS
+shapiro.test(dailyPaula$dailyjam) # W = 0.94158, p-value = 7.464e-09 FAILS
+
+### CONCLUSION: NONE OF THEM ARE NORMAL DISTRIBUTIONS
+
+#### Looking for similarities ####
+
+# focus on association with Spearman's and Kendall's
+## restore dailyEmma and dailyPaula removing the person column
+dailyEmma <- dailyEmma[, c("date", "dailyjam")]
+dailyPaula <- dailyPaula[, c("date", "dailyjam")]
+
+## aggregate datasets by date
+aggregateDate <- inner_join(dailyEmma, dailyPaula, by = "date",
+                            suffix = c("Emma", "Paula"))
+
+## run Spearman's
+cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
+         method = "spearman")
+# S = 1813896, p-value = 0.744, rho -0.0221263 
+# run Kendall's
+cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
+         method = "kendall")
+# z = -0.23273, p-value = 0.816, tau -0.01054379
+
+## none of these shows a statistically relevant relationship between the two
+## as both values are close to zero, there is no correlation
+## it doesn't mean that we don't like the same music ever, it just means that
+## our daily listening patterns are totally different
 
 
+# run another statistical test with the clean dataset & categorical variables:
+# chisquare
+chisquareEmma <- streaming2024Emma %>% mutate(person = "Emma")
+chisquarePaula <- streaming2024Paula %>% mutate(person = "Paula")
+chisquare <- bind_rows(streaming2024Emma, streaming2024Paula)
 
+# extract top 10 common artists
+top10ArtistsCommon <- chisquare %>%
+  group_by(artistName) %>%
+  summarize(total_minutes = sum(minutes)) %>%
+  arrange(desc(total_minutes)) %>%
+  slice_head(n =10) %>%
+  pull(artistName)
+ArtistsCommonTable <- chisquare %>%
+  filter(artistName %in% top10ArtistsCommon) %>%
+  count(person, artistName) %>%
+  tidyr::pivot_wider(names_from = person, values_from = n, values_fill = 0) %>%
+  column_to_rownames("artistName")
+## TO BE CONTINUED - FINISH THE TEST AND THE PLOT
 
-
-
-## tsibble
-tsPaula <- prophetPaula %>%
-  mutate(ds = as_date(ds)) %>%
-  as_tsibble(index = ds)
-tsEmma <- prophetEmma %>%
-  mutate(ds = as_date(ds)) %>%
-  as_tsibble(index = ds)
-ggplot() +
-  geom_line(data = tsPaula, aes(ds, y, color = "Paula")) +
-  geom_line(data = tsEmma, aes(ds, y, color = "Emma"))
- 
 
 # Venn Diagrams
+library(ggvenn)
 VennArtists <- list(Paula = unique(streaming2024Paula$artistName),
                     Emma = unique(streaming2024Emma$artistName),
                     Global = Most_Streamed_Spotify_Artists_2024$Artist)
@@ -262,11 +309,11 @@ ggvenn(VennSongs, fill_color = c("blue", "red", "green")) +
 # try function geom_venn with ggplot2
 
 commonartists <- intersect(intersect(unique(streaming2024Paula$artistName),
-                  unique(streaming2024Emma$artistName)),
-                  unique(Most_Streamed_Spotify_Artists_2024$Artist))
+                                     unique(streaming2024Emma$artistName)),
+                           unique(Most_Streamed_Spotify_Artists_2024$Artist))
 commonartists <- data.frame(commonartists)
 commonartistsgirls <- data.frame(intersect(unique(streaming2024Paula$artistName),
-                                unique(streaming2024Emma$artistName)))
+                                           unique(streaming2024Emma$artistName)))
 
 commonsongs <- intersect(intersect(
   unique(streaming2024Paula$trackName),
@@ -276,10 +323,56 @@ commonsongs <- data.frame(commonsongs)
 commonsongsgirls <- data.frame(intersect(unique(streaming2024Paula$trackName),
                                          unique(streaming2024Emma$trackName)))
 
+CONCLUSION: OUR LISTENING HABITS HAVE VERY LITTLE IN common, either STATISTICALLY
+WORKING WITH AGGREGATE DATA (BOTH SPEARMAN AND KENDALL GAVE NEGATIVE RESULTS)
+BUT ALSO LOOKING AT SONGS AND ARTISTS (NON AGGREGATE), WE HAVE VERY FEW OF THEM
+IN commonartists
+THEREFORE <-  WE LOOK NOW AT DIFFERENCES BETWEEN THE DATASETS
+
+
+
+#### Looking for differences ####
+
+### we will use nonparametric tests since the distribution is not normal
+### the datasets are unpaired because we are different people
+### (even though the same data period was set)
+### Unpaired + nonparametric = Mann-Whitney U test aka Wilcoxon test
+### This test intends to find out if the distributions of daily listening time
+### are different between Emma and Paula
+
+aggregatedaily <- bind_rows(dailyEmma, dailyPaula)
+dailyEmma$person <- "Emma"
+dailyPaula$person <- "Paula"
+wilcox.test(y ~ person, data = aggregatedaily) # W = 19979, p-value = 1.167e-10
+# reject the null hypothesis because p < 0.05, there's a statistical difference!
+aggregate(y ~ person, data = aggregatedaily, median)
+# 1   Emma  67.587 2  Paula 128.379 : Paula listens more mins than Emma
+ggplot(aggregatedaily, aes(x = person, y = dailyjam, fill = person)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, color = "black") +
+  scale_y_continuous(breaks = seq(0, 500, 60)) +
+  theme_clean() +
+  labs(title = "Daily Listening Distribution Emma vs Paula",
+       x = "Person", y = "Minutes listened per day")
+
+
+## tsibble
+tsPaula <- prophetPaula %>%
+  mutate(ds = as_date(ds)) %>%
+  as_tsibble(index = ds)
+tsEmma <- prophetEmma %>%
+  mutate(ds = as_date(ds)) %>%
+  as_tsibble(index = ds)
+ggplot() +
+  geom_line(data = tsPaula, aes(ds, y, color = "Paula")) +
+  geom_line(data = tsEmma, aes(ds, y, color = "Emma"))
+ 
+
+
 # Density Ridge Plot
 combinedstreaming2024month <- bind_rows(
-  prophetPaula %>% mutate(user = "Paula"),
-  prophetEmma %>% mutate(user = "Emma")) %>%
+  dailyPaula %>% mutate(user = "Paula"),
+  dailyEmma %>% mutate(user = "Emma")) %>%
   mutate(date = as_date(ds), day_of_month = day(ds),
          month = month(ds, label = TRUE, abbr = FALSE))
 
@@ -318,3 +411,32 @@ ggplot(top10Emma, aes(x = reorder(trackName, total_mins), y = total_mins)) +
   theme_clean() +
   theme(plot.title = element_text(face = "bold", color = "#FF85A2"),
         panel.grid.major.y = element_blank())
+
+# Top10 artists
+
+
+# Time Series Analysis
+## using the prophet package, first prepare the data to be understood by it
+prophetPaula <- dailyPaula %>%
+  rename(ds = date, y = dailyjam) %>%
+  select(ds, y)
+prophetEmma <- dailyEmma %>%
+  rename(ds = date, y = dailyjam) %>%
+  select(ds, y)
+
+# run the model
+modelPaula <- prophet(prophetPaula)
+modelPaula$params
+futurePaula <- make_future_dataframe(modelPaula, 259, freq = "day")
+forecastPaula <- predict(modelPaula, futurePaula)
+plot(modelPaula, forecastPaula)
+prophet_plot_components(modelPaula, forecastPaula)
+dyplot.prophet(modelPaula, forecastPaula)
+
+modelEmma <- prophet(prophetEmma)
+futureEmma <- make_future_dataframe(modelEmma, 259, freq = "day")
+forecastEmma <- predict(modelEmma, futureEmma)
+plot(modelEmma, forecastEmma)
+prophet_plot_components(modelEmma, forecastEmma)
+dyplot.prophet(modelEmma, forecastEmma)
+
