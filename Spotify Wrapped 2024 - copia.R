@@ -1,0 +1,541 @@
+#### PREPARATION ####
+
+# Import the required libraries and set the local language to English
+
+library(rjson)
+library(jsonlite)
+library(tidyverse)
+library(lubridate)
+library(tsibble)
+library(glue)
+library(ggvenn)
+library(ggthemes)
+library(ggridges)
+library(prophet)
+
+Sys.setlocale("LC_TIME", "English")
+
+
+# Import the raw files
+
+## Paula has two spotify json files, one until August and another until December
+## Import the files separately with the needed adjustments
+file.exists("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_0.json")
+file_content1 <- readLines("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_0.json")
+parsed_data1 <- fromJSON(paste(file_content1, collapse = " "))
+streaminghistory1 <- parsed_data1 %>% bind_rows()
+
+file.exists("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_1.json")
+file_content2 <- readLines("~/Just for fun - R/Spotify Data 2024/my_spotify_data/Spotify Account Data/StreamingHistory_music_1.json")
+parsed_data2 <- fromJSON(paste(file_content2, collapse = " "))
+streaminghistory2 <- parsed_data2 %>% bind_rows()
+
+## Merge the files and check how it looks
+streaming2024Paula <- bind_rows(streaminghistory1, streaminghistory2)
+View(streaming2024Paula)
+str(streaming2024Paula)
+
+#### CLEANING RAW DATASETS ####
+
+### doing things differently with lubridate
+## separating the column endtime into different columns with different info
+## too much information on the column endtime!
+streaming2024Paula <- streaming2024Paula %>%
+  mutate(
+    endTime = ymd_hm(endTime),
+    year = year(endTime),
+    month = month(endTime),
+    day = day(endTime),
+    weekday = wday(endTime, label = TRUE),
+    hour = hour(endTime),
+    minute = minute(endTime))
+
+## locale settings to English: they appeared in my device's language
+Sys.setlocale("LC_TIME", "English")
+
+## reorder weekday to start on Monday instead of Sunday
+streaming2024Paula$weekday <- factor(streaming2024Paula$weekday, levels = c(
+  "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+
+## reordering columns for clarity - with native subsetting!
+streaming2024Paula <- streaming2024Paula[, c("year", "month", "day", "weekday",
+                                             "hour", "minute", "artistName",
+                                             "trackName", "msPlayed")]
+
+## filtering by year: removing 2023 data - with native subsetting!
+streaming2024Paula <- streaming2024Paula[streaming2024Paula$year == 2024, ]
+
+## remove the "year" column since it's now redundant - with native subsetting!
+streaming2024Paula <- streaming2024Paula[, -1] # 
+
+## NA values
+anyNA(streaming2024Paula) # gave FALSE
+summary(is.na(streaming2024Paula)) # gave FALSE
+
+## unknowns:
+unknownartistsPaula <- streaming2024Paula[
+  streaming2024Paula$artistName == "Unknown Artist", ]
+unknowntracksPaula <- streaming2024Paula[
+  streaming2024Paula$trackName == "Unknown Track", ]
+identical(unknownartistsPaula, unknowntracksPaula) # gave TRUE, play summary
+# we decided to get rid of the 140 unknowns there's really no conclusion
+streaming2024Paula <- streaming2024Paula[!(
+  streaming2024Paula$artistName == "Unknown Artist" &
+    streaming2024Paula$trackName == "Unknown Track"), ]
+  
+## adding columns seconds, minutes and hours
+streaming2024Paula <- streaming2024Paula %>%
+  mutate(seconds = round(msPlayed / 1000, 2),
+         minutes = round(msPlayed / 60000, 3))
+
+## remove those rows where msPlayed = 0 - we count them as not played
+streaming2024Paula <- streaming2024Paula[streaming2024Paula$msPlayed != 0, ]
+
+## using the same logic, remove those rows where seconds < 10 - we count them as skips
+streaming2024Paula <- streaming2024Paula[streaming2024Paula$seconds >= 10, ]
+
+##duplicates
+duplicatesPaula <- streaming2024Paula %>%
+  group_by(artistName, trackName, month, day, hour, minute) %>%
+  filter(n() > 1) %>%
+  arrange(month, day, hour, minute)
+# not real skips, we continue to consider them on the dataset
+
+# Repeat the process with Emma's dataset
+
+file.exists("~/MA IB & ED/Semester 2/Business Analytics II/Project/Project Semester2/spotify1Emma.json")
+file_content3 <- readLines("~/MA IB & ED/Semester 2/Business Analytics II/Project/Project Semester2/spotify1Emma.json")
+parsed_data3 <- fromJSON(paste(file_content3, collapse = " "))
+streaming2024Emma <- parsed_data3 %>% bind_rows()
+
+streaming2024Emma <- streaming2024Emma %>%
+  mutate(
+    endTime = ymd_hm(endTime),
+    year = year(endTime),
+    month = month(endTime),
+    day = day(endTime),
+    weekday = wday(endTime, label = TRUE),
+    hour = hour(endTime),
+    minute = minute(endTime))
+
+Sys.setlocale("LC_TIME", "English")
+
+streaming2024Emma$weekday <- factor(
+  streaming2024Emma$weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri",
+                                             "Sat", "Sun"))
+
+streaming2024Emma <- streaming2024Emma[, c("year", "month", "day", "weekday",
+                                           "hour", "minute", "artistName",
+                                           "trackName", "msPlayed")]
+
+streaming2024Emma <- streaming2024Emma[streaming2024Emma$year == 2024, ]
+streaming2024Emma <- streaming2024Emma[, -1]
+
+
+anyNA(streaming2024Emma) # gave FALSE
+summary(is.na(streaming2024Emma)) # gave FALSE
+
+unknownartistsEmma <- streaming2024Emma[streaming2024Emma$artistName == "Unknown Artist", ]
+unknowntracksEmma <- streaming2024Emma[streaming2024Emma$trackName == "Unknown Track", ]
+identical(unknownartistsEmma, unknowntracksEmma) # gave TRUE, play View, head, summary
+# we decided to get rid of the 5 unknowns since there's really no conclusion we can get
+streaming2024Emma <- streaming2024Emma[!(streaming2024Emma$artistName == "Unknown Artist" &
+                                           streaming2024Emma$trackName == "Unknown Track"), ]
+streaming2024Emma <- streaming2024Emma %>%
+  mutate(seconds = round(msPlayed / 1000, 2),
+         minutes = round(msPlayed / 60000, 3))
+streaming2024Emma <- streaming2024Emma[streaming2024Emma$msPlayed != 0, ]
+streaming2024Emma <- streaming2024Emma[streaming2024Emma$seconds >= 10, ]
+duplicatesEmma <- streaming2024Emma %>%
+  group_by(artistName, trackName, month, day, hour, minute) %>%
+  filter(n() > 1) %>%
+  arrange(month, day, hour, minute)
+## we continue to consider them on the dataset
+
+## one final cleaning: Paula's dataset spans until December 17,
+# Emma's dataset starts on March 18th
+## we filter the datasets so that they include data only from March 18 to December 17
+streaming2024Paula <- streaming2024Paula[
+  (streaming2024Paula$month > 3) |
+    (streaming2024Paula$month == 3 & streaming2024Paula$day >=18), ]
+streaming2024Emma <- streaming2024Emma[
+  (streaming2024Emma$month < 12) |
+    (streaming2024Emma$month == 12 & streaming2024Emma$day <=17), ]
+
+# Import and clean the Songs data frame
+library(readr)
+Most_Streamed_Spotify_Songs_2024 <- read_csv("Most Streamed Spotify Songs 2024.csv")
+Most_Streamed_Spotify_Songs_2024 <- Most_Streamed_Spotify_Songs_2024[, c(
+  "Artist", "Track", "All Time Rank", "Spotify Streams")]
+Most_Streamed_Spotify_Songs_2024 <- Most_Streamed_Spotify_Songs_2024[1:100, ]
+anyNA(Most_Streamed_Spotify_Songs_2024) #gave TRUE
+summary(is.na(Most_Streamed_Spotify_Songs_2024)) # gave 4 streams
+NAs <- Most_Streamed_Spotify_Songs_2024[is.na(Most_Streamed_Spotify_Songs_2024$`Spotify Streams`), ]
+## not that important for analysis we decided to keep them in the dataset
+duplicatesGlobal <- Most_Streamed_Spotify_Songs_2024 %>%
+  group_by(Artist, Track, `All Time Rank`, `Spotify Streams`) %>%
+  filter(n() > 1) %>%
+  arrange(Artist, Track, `All Time Rank`, `Spotify Streams`)
+## no duplicates found
+
+# Import and clean the Artists data frame
+## Source: https://chartmasters.org/community/records/spotify-most-streamed-artists-2024/
+library(readr)
+Most_Streamed_Spotify_Artists_2024 <- read_delim(
+  "Most Streamed Spotify Artists 2024.csv",
+  delim = ";", escape_double = FALSE, trim_ws = TRUE)
+colnames(Most_Streamed_Spotify_Artists_2024) <- c("Rank", "Artist",
+                                                  "Spotify Streams")
+Most_Streamed_Spotify_Artists_2024 <- Most_Streamed_Spotify_Artists_2024[
+  2:38, ]
+
+#### ANALYSIS ####
+
+## Statistical analysis: figure out the distribution type, aggregate data
+## new variables dailyPaula and dailyEmma with just date and minutes
+dailyPaula <- streaming2024Paula %>%
+  mutate(date = make_datetime(year = 2024, month = month, day = day)) %>%
+  select(date, everything()) %>%
+  select(-month, -day, -weekday, -seconds, -msPlayed) %>%
+  group_by(date) %>%
+  summarize(dailyjam = sum(minutes)) %>%
+  ungroup()
+dailyEmma <- streaming2024Emma %>%
+  mutate(date = make_datetime(year = 2024, month = month, day = day)) %>%
+  select(date, everything()) %>%
+  select(-month, -day, -weekday, -seconds, -msPlayed) %>%
+  group_by(date) %>%
+  summarize(dailyjam = sum(minutes)) %>%
+  ungroup()
+## create a HISTOGRAM with dailyEmma and dailyPaula
+ggplot(dailyEmma, aes(x = dailyjam)) +
+  geom_histogram(bins = 25, fill = "#1ED760", color = "white") +
+  labs(x = "Minutes listened per day", y = "Number of days") +
+  theme_clean() +
+  labs(title ="Emma's histogram")
+### Emma's looks like a right-skewed distribution, more or less
+ggplot(dailyPaula, aes(x = dailyjam)) +
+  geom_histogram(bins = 25, fill = "#FF69B4", color = "white") +
+  labs(x = "Minutes listened per day", y = "Number of days") +
+  theme_clean() +
+  labs(title = "Paula's histogram")
+### Paula's too but with a bit of a second mode
+
+#create a QQPLOT
+ggplot(dailyEmma, aes(sample = dailyjam)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_clean() +
+  labs(title = "Emma's QQ plot")
+### curves to the left, not exactly a straight line
+ggplot(dailyPaula, aes(sample = dailyjam)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_clean() +
+  labs(title = "Paula's QQ plot")
+### curves to the left, not exactly a straight line
+
+##run the SHAPIRO TEST
+shapiro.test(dailyEmma$dailyjam) # W = 0.83138, p-value = 7.257e-15 FAILS
+shapiro.test(dailyPaula$dailyjam) # W = 0.94158, p-value = 7.464e-09 FAILS
+
+### CONCLUSION: NONE OF THEM ARE NORMAL DISTRIBUTIONS
+
+#### Looking for similarities ####
+
+# focus on association with Spearman's and Kendall's
+## restore dailyEmma and dailyPaula removing the person column
+dailyEmma <- dailyEmma[, c("date", "dailyjam")]
+dailyPaula <- dailyPaula[, c("date", "dailyjam")]
+
+## aggregate datasets by date
+aggregateDate <- inner_join(dailyEmma, dailyPaula, by = "date",
+                            suffix = c("Emma", "Paula"))
+
+## run Spearman's
+cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
+         method = "spearman") # S = 1813896, p-value = 0.744, rho -0.0221263 
+# run Kendall's
+cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
+         method = "kendall") # z = -0.23273, p-value = 0.816, tau -0.01054379
+
+## none of these shows a statistically relevant relationship between the two
+## as both values are close to zero, there is no correlation
+## it doesn't mean that we don't like the same music ever, it just means that
+## our daily listening patterns are totally different
+
+
+# run another statistical test with the clean dataset & categorical variables:
+# chisquare
+chisquareEmma <- streaming2024Emma %>% mutate(person = "Emma")
+chisquarePaula <- streaming2024Paula %>% mutate(person = "Paula")
+chisquare <- bind_rows(chisquarePaula, chisquareEmma)
+
+# extract top 10 common artists
+top10ArtistsCommon <- chisquare %>%
+  group_by(artistName) %>%
+  summarize(total_minutes = sum(minutes)) %>%
+  arrange(desc(total_minutes)) %>%
+  slice_head(n =10) %>%
+  pull(artistName)
+# put them in a table with the listening time
+ArtistsCommonTable <- chisquare %>%
+  filter(artistName %in% top10ArtistsCommon) %>%
+  count(person, artistName) %>%
+  tidyr::pivot_wider(names_from = person, values_from = n, values_fill = 0) %>%
+  column_to_rownames("artistName")
+# just by viewing the table we barely share anything
+
+# run the chisquare test
+chisq.test(as.matrix(ArtistsCommonTable))
+# X-squared = 6563.3, df = 9, p-value < 2.2e-16
+# alternative hypothesis confirmed: strong association between person and artist
+# that means that each of us prefers different artists, completely!
+
+# build a bar chart
+bartop10common <- chisquare %>%
+  filter(artistName %in% top10ArtistsCommon) %>%
+  count(person, artistName) %>%
+  group_by(artistName) %>%
+  mutate(totalplays = sum(n)) %>%
+  ungroup() %>%
+  mutate(artistName = reorder(artistName, totalplays))
+
+
+diverging_data <- bartop10common %>%
+  mutate(n = ifelse(person == "Emma", -n, n)) %>%
+  group_by(artistName) %>%
+  mutate(totalplays = sum(abs(n))) %>%
+  ungroup() %>%
+  mutate(artistName = fct_reorder(artistName, totalplays))
+
+ggplot(diverging_data, aes(x = artistName, y = n, fill = n)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = abs(n)), position = position_stack(vjust = 0.5),
+            size = 3.5, fontface = "bold", color = "black") +
+  coord_flip() +
+  scale_fill_gradient2(low = "#1ED760", mid = "white", high = "#FF69B4",
+                       midpoint = 0, name = "Play Count", labels = abs) +
+  scale_y_continuous(labels = abs) +
+  labs(title = "Common Artists Showdown: Emma vs Paula", x = "Artist",
+       y = "Play Count", ) +
+  theme_clean()
+
+
+
+# Venn Diagrams
+
+VennArtists <- list(Paula = unique(streaming2024Paula$artistName),
+                    Emma = unique(streaming2024Emma$artistName),
+                    Global = Most_Streamed_Spotify_Artists_2024$Artist)
+ggvenn(VennArtists, fill_color = c("#FF69B4", "#1ED760", "royalblue1")) +
+  labs(title = "2024 Artists Venn Diagram")
+
+VennSongs <- list(Paula = unique(streaming2024Paula$trackName),
+                  Emma = unique(streaming2024Emma$trackName),
+                  Global = Most_Streamed_Spotify_Songs_2024$Track)
+ggvenn(VennSongs, fill_color = c("#FF69B4", "#1ED760", "royalblue1")) +
+  labs(title = "2024 Songs Venn Diagram")
+# try function geom_venn with ggplot2
+
+commonartists <- intersect(intersect(unique(streaming2024Paula$artistName),
+                                     unique(streaming2024Emma$artistName)),
+                           unique(Most_Streamed_Spotify_Artists_2024$Artist))
+commonartists <- data.frame(commonartists)
+commonartistsgirls <- data.frame(intersect(unique(streaming2024Paula$artistName),
+                                           unique(streaming2024Emma$artistName)))
+
+commonsongs <- intersect(intersect(
+  unique(streaming2024Paula$trackName),
+  unique(streaming2024Emma$trackName)),
+  unique(Most_Streamed_Spotify_Songs_2024$Track))
+commonsongs <- data.frame(commonsongs)
+commonsongsgirls <- data.frame(intersect(unique(streaming2024Paula$trackName),
+                                         unique(streaming2024Emma$trackName)))
+
+# CONCLUSION: OUR LISTENING HABITS HAVE VERY LITTLE IN common,
+# either STATISTICALLY WORKING WITH AGGREGATE DATA
+# (BOTH SPEARMAN AND KENDALL GAVE NEGATIVE RESULTS) BUT ALSO LOOKING AT SONGS
+# AND ARTISTS (NON AGGREGATE), WE HAVE VERY FEW OF THEM IN commonartists
+# THEREFORE <-  WE LOOK NOW AT DIFFERENCES BETWEEN THE DATASETS
+
+
+
+#### Looking for differences ####
+
+### we will use nonparametric tests since the distribution is not normal
+### the datasets are unpaired because we are different people
+### (even though the same data period was set)
+### Unpaired + nonparametric = Mann-Whitney U test aka Wilcoxon test
+### This test intends to find out if the distributions of daily listening time
+### are different between Emma and Paula
+
+dailyEmma$person <- "Emma"
+dailyPaula$person <- "Paula"
+aggregatedaily <- bind_rows(dailyEmma, dailyPaula)
+wilcox.test(dailyjam ~ person, data = aggregatedaily) # W = 19979, p-value = 1.167e-10
+# reject the null hypothesis because p < 0.05, there's a statistical difference!
+aggregate(dailyjam ~ person, data = aggregatedaily, median)
+# 1   Emma  67.587 2  Paula 128.379 : Paula listens more mins than Emma
+ggplot(aggregatedaily, aes(x = person, y = dailyjam, fill = person)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, color = "black") +
+  scale_y_continuous(breaks = seq(0, 500, 60)) +
+  scale_fill_manual(values = c("#1ED760", "#FF69B4")) +
+  theme_clean() +
+  labs(title = "Daily Listening Distribution Emma vs Paula",
+       x = "Person", y = "Minutes listened per day")
+
+# Figure out top 10 songs and artists of each of us
+# Top10 artists
+top10artistsEmma <- streaming2024Emma %>%
+  group_by(artistName) %>%
+  summarize(totalmins = sum(minutes), totalhours = round(totalmins / 60, 2),
+            .groups = "drop") %>%
+  arrange(desc(totalmins)) %>%
+  slice_head(n = 10)
+top10artistsPaula <- streaming2024Paula %>%
+  group_by(artistName) %>%
+  summarize(totalmins = sum(minutes), totalhours = round(totalmins / 60, 2),
+            .groups = "drop") %>%
+  arrange(desc(totalmins)) %>%
+  slice_head(n = 10)
+
+# lollipop chart
+ggplot(top10artistsEmma, aes(reorder(artistName, totalmins), y = totalmins)) +
+  geom_segment(aes(xend = artistName, yend = 0),
+                   color = "#1DB954", linewidth = 4) +
+  geom_point(size = 12, color = "#1DB954") +
+  geom_text(aes(label = paste0(totalhours, "h")),
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 2700, by = 300)) +
+  coord_flip() +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954", size = 16)) +
+  labs(title = "Emma's Top 10 Artists in hours", x = "Artists", y = "Minutes")
+ggplot(top10artistsPaula, aes(reorder(artistName, totalmins), y = totalmins)) +
+  geom_segment(aes(xend = artistName, yend = 0),
+               color = "#1DB954", linewidth = 4) +
+  geom_point(size = 12, color = "#1DB954") +
+  geom_text(aes(label = paste0(totalhours, "h")),
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 6000, by = 600)) +
+  coord_flip() +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954", size = 16)) +
+  labs(title = "Paula's Top 10 Artists in hours", x = "Artists", y = "Minutes")
+
+
+# Top10 songs
+top10songsEmma <- streaming2024Emma %>%
+  group_by(artistName, trackName) %>%
+  summarize(total_mins = sum(minutes), .groups = "drop") %>%
+  arrange(desc(total_mins)) %>%
+  mutate(total_hours = round(total_mins / 60, 2)) %>%
+  slice_head(n =10) %>%
+  mutate(songlabel = glue("{trackName}\n{artistName}"))
+top10songsPaula <- streaming2024Paula %>%
+  group_by(artistName, trackName) %>%
+  summarize(total_mins = sum(minutes), .groups = "drop") %>%
+  arrange(desc(total_mins)) %>%
+  mutate(total_hours = round(total_mins / 60, 2)) %>%
+  slice_head(n =10) %>%
+  mutate(songlabel = glue("{trackName}\n{artistName}"))
+
+# "lollipop" chart
+ggplot(top10songsEmma, aes(x = reorder(songlabel, total_mins), y = total_mins)) +
+  geom_segment(aes(xend = songlabel, yend = 0),
+               color = "#1DB954", linewidth = 1.5) +
+  geom_point(size = 8, color = "#1DB954") +
+  geom_text(aes(label = paste0(round(total_hours, 1), "h")), 
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 300, by = 60)) +
+  coord_flip() +
+  labs(title = "Emma's Top 10 Songs in hours", x = "Songs", y = "Minutes") +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954"),
+        axis.text.y = element_text(size = 9))
+ggplot(top10songsPaula, aes(x = reorder(songlabel, total_mins), y = total_mins)) +
+  geom_segment(aes(xend = songlabel, yend = 0),
+               color = "#1DB954", linewidth = 1.5) +
+  geom_point(size = 8, color = "#1DB954") +
+  geom_text(aes(label = paste0(round(total_hours, 1), "h")), 
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 500, by = 60)) +
+  coord_flip() +
+  labs(title = "Paula's Top 10 Songs in hours", x = "Songs", y = "Minutes") +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954"),
+        axis.text.y = element_text(size = 9))
+
+
+
+
+#### Time Series Analysis ####
+
+## tsibble package
+tsPaula <- dailyPaula %>%
+  mutate(date = as_date(date)) %>%
+  as_tsibble(index = dailyjam)
+tsEmma <- dailyEmma %>%
+  mutate(date = as_date(date)) %>%
+  as_tsibble(index = dailyjam)
+
+# plot daily streaming throughout time
+ggplot() +
+  geom_line(data = tsPaula, aes(date, dailyjam, color = "Paula"),
+            linewidth = 1.05, alpha = 0.8) +
+  geom_line(data = tsEmma, aes(date, dailyjam, color = "Emma"),
+            linewidth = 1.05, alpha = 0.8) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  scale_color_manual(values = c("Emma" ="#1ED760", "Paula" = "#FF69B4")) +
+  theme_gdocs() +
+  theme(plot.title = element_text(face = "bold"),
+        axis.text.x = element_text(face = "bold"),
+        axis.text.y = element_text(face = "bold")) +
+  labs(title = "Evolution of Streaming Habits", y ="Minutes listened per day",
+       x = "Date", color = "Person")
+# basic info: describe it
+ 
+
+# Density Ridge Plot
+combinedstreaming2024month <- bind_rows(
+  dailyPaula %>% mutate(user = "Paula"),
+  dailyEmma %>% mutate(user = "Emma")) %>%
+  mutate(date = as_date(date), day_of_month = day(date),
+         month = month(date, label = TRUE, abbr = FALSE))
+
+ggplot(combinedstreaming2024month, aes(x = dailyjam, y = month, fill = user)) +
+  geom_density_ridges(alpha = 0.4) +
+  scale_fill_manual(values = c("Paula" = "#FF69B4", "Emma" = "#1ED760"),
+                    name = "User") +
+  scale_x_continuous(breaks = seq(0, 600, by = 60)) +
+  labs(title = "Paula vs Emma Streaming by Month", x = "Minutes of Streaming",
+       y ="Month") +
+  theme_ridges() +
+  theme(legend.position = "none")
+
+# using the prophet package, first prepare the data to be understood by it
+prophetPaula <- dailyPaula %>%
+  rename(ds = date, y = dailyjam) %>%
+  select(ds, y)
+prophetEmma <- dailyEmma %>%
+  rename(ds = date, y = dailyjam) %>%
+  select(ds, y)
+
+# run the model
+modelPaula <- prophet(prophetPaula)
+futurePaula <- make_future_dataframe(modelPaula, 259, freq = "day")
+forecastPaula <- predict(modelPaula, futurePaula)
+forecastPaulaplot <- plot(modelPaula, forecastPaula)
+forecastPaulaplot + labs(title = "Paula's Streaming Forecast")
+prophet_plot_components(modelPaula, forecastPaula)
+dyplot.prophet(modelPaula, forecastPaula)
+
+modelEmma <- prophet(prophetEmma)
+futureEmma <- make_future_dataframe(modelEmma, 259, freq = "day")
+forecastEmma <- predict(modelEmma, futureEmma)
+forecastEmmaplot <- plot(modelEmma, forecastEmma)
+forecastEmmaplot + labs(title = "Emma's Streaming Forecast")
+prophet_plot_components(modelEmma, forecastEmma)
+dyplot.prophet(modelEmma, forecastEmma)
