@@ -1,9 +1,3 @@
-### SPOTIFY WRAPPED 2024 - AN ANALYSIS ###
-
-# The goal of this project is to perform an analysis on Spotify's raw data
-# to check on another end the data displayed officially by Spotify and get
-# advanced insights from the file
-
 # 1. Import the required libraries
 
 library(rjson)
@@ -18,6 +12,11 @@ library(plotly)
 library(prophet)
 library(forecast)
 library(ggvenn)
+library(tsibble)
+library(glue)
+
+## check if there are packages we didnt use
+## my suspects: rjson, gghighlight, knitr, ggdark, forecast, plotly
 
 readlines(readr which is TIDYVERSE)
 fromJSON(jsonlite)
@@ -259,12 +258,10 @@ aggregateDate <- inner_join(dailyEmma, dailyPaula, by = "date",
 
 ## run Spearman's
 cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
-         method = "spearman")
-# S = 1813896, p-value = 0.744, rho -0.0221263 
+         method = "spearman") # S = 1813896, p-value = 0.744, rho -0.0221263 
 # run Kendall's
 cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
-         method = "kendall")
-# z = -0.23273, p-value = 0.816, tau -0.01054379
+         method = "kendall") # z = -0.23273, p-value = 0.816, tau -0.01054379
 
 ## none of these shows a statistically relevant relationship between the two
 ## as both values are close to zero, there is no correlation
@@ -276,7 +273,7 @@ cor.test(aggregateDate$dailyjamEmma, aggregateDate$dailyjamPaula,
 # chisquare
 chisquareEmma <- streaming2024Emma %>% mutate(person = "Emma")
 chisquarePaula <- streaming2024Paula %>% mutate(person = "Paula")
-chisquare <- bind_rows(streaming2024Emma, streaming2024Paula)
+chisquare <- bind_rows(chisquareEmma, chisquarePaula)
 
 # extract top 10 common artists
 top10ArtistsCommon <- chisquare %>%
@@ -285,12 +282,48 @@ top10ArtistsCommon <- chisquare %>%
   arrange(desc(total_minutes)) %>%
   slice_head(n =10) %>%
   pull(artistName)
+# put them in a table with the listening time
 ArtistsCommonTable <- chisquare %>%
   filter(artistName %in% top10ArtistsCommon) %>%
   count(person, artistName) %>%
   tidyr::pivot_wider(names_from = person, values_from = n, values_fill = 0) %>%
   column_to_rownames("artistName")
-## TO BE CONTINUED - FINISH THE TEST AND THE PLOT
+# just by viewing the table we barely share anything
+
+# run the chisquare test
+chisq.test(as.matrix(ArtistsCommonTable))
+# X-squared = 6563.3, df = 9, p-value < 2.2e-16
+# alternative hypothesis confirmed: strong association between person and artist
+# that means that each of us prefers different artists, completely!
+
+# build a bar chart
+bartop10common <- chisquare %>%
+  filter(artistName %in% top10ArtistsCommon) %>%
+  count(person, artistName) %>%
+  group_by(artistName) %>%
+  mutate(totalplays = sum(n)) %>%
+  ungroup() %>%
+  mutate(artistName = reorder(artistName, totalplays))
+
+ggplot(bartop10common, aes(x = artistName, y = n, fill = person)) +
+  geom_col(position = position_dodge(width = 0.85), width = 0.75) +
+  geom_text(aes(label = n), position = position_dodge(width = 0.85),
+            color = "black", fontface = "bold", hjust = -0.05, size = 3) +
+  coord_flip() +
+  scale_fill_manual(values = c("Emma" = "red", "Paula" = "blue")) +
+  labs(title = "Bar Chart Top 10 Artists Aggregated", x= "Artist",
+       y = "Play Count", fill = "Person") +
+  theme_classic()
+
+  
+  
+ggplot(heatmap, aes(x = person, y = reorder(artistName, n), fill = n)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n), color = "black", fontface = "bold") +
+  scale_fill_gradient(low = "green3", high = "darkgreen") +
+  labs(title = "Heatmap Common Artists", y = "Artist", fill = "Play Count") +
+  theme_clean()
+# i don't like it
 
 
 # Venn Diagrams
@@ -323,11 +356,11 @@ commonsongs <- data.frame(commonsongs)
 commonsongsgirls <- data.frame(intersect(unique(streaming2024Paula$trackName),
                                          unique(streaming2024Emma$trackName)))
 
-CONCLUSION: OUR LISTENING HABITS HAVE VERY LITTLE IN common, either STATISTICALLY
-WORKING WITH AGGREGATE DATA (BOTH SPEARMAN AND KENDALL GAVE NEGATIVE RESULTS)
-BUT ALSO LOOKING AT SONGS AND ARTISTS (NON AGGREGATE), WE HAVE VERY FEW OF THEM
-IN commonartists
-THEREFORE <-  WE LOOK NOW AT DIFFERENCES BETWEEN THE DATASETS
+# CONCLUSION: OUR LISTENING HABITS HAVE VERY LITTLE IN common,
+# either STATISTICALLY WORKING WITH AGGREGATE DATA
+# (BOTH SPEARMAN AND KENDALL GAVE NEGATIVE RESULTS) BUT ALSO LOOKING AT SONGS
+# AND ARTISTS (NON AGGREGATE), WE HAVE VERY FEW OF THEM IN commonartists
+# THEREFORE <-  WE LOOK NOW AT DIFFERENCES BETWEEN THE DATASETS
 
 
 
@@ -355,19 +388,116 @@ ggplot(aggregatedaily, aes(x = person, y = dailyjam, fill = person)) +
   labs(title = "Daily Listening Distribution Emma vs Paula",
        x = "Person", y = "Minutes listened per day")
 
+# Figure out top 10 songs and artists of each of us
+# Top10 artists
+top10artistsEmma <- streaming2024Emma %>%
+  group_by(artistName) %>%
+  summarize(totalmins = sum(minutes), totalhours = round(totalmins / 60, 2),
+            .groups = "drop") %>%
+  arrange(desc(totalmins)) %>%
+  slice_head(n = 10)
+top10artistsPaula <- streaming2024Paula %>%
+  group_by(artistName) %>%
+  summarize(totalmins = sum(minutes), totalhours = round(totalmins / 60, 2),
+            .groups = "drop") %>%
+  arrange(desc(totalmins)) %>%
+  slice_head(n = 10)
 
-## tsibble
-tsPaula <- prophetPaula %>%
-  mutate(ds = as_date(ds)) %>%
-  as_tsibble(index = ds)
-tsEmma <- prophetEmma %>%
-  mutate(ds = as_date(ds)) %>%
-  as_tsibble(index = ds)
+# lollipop chart
+ggplot(top10artistsEmma, aes(reorder(artistName, totalmins), y = totalmins)) +
+  geom_segment(aes(xend = artistName, yend = 0),
+                   color = "#1DB954", linewidth = 4) +
+  geom_point(size = 12, color = "#1DB954") +
+  geom_text(aes(label = paste0(totalhours, "h")),
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 2700, by = 300)) +
+  coord_flip() +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954", size = 16)) +
+  labs(title = "Emma's Top 10 Artists in hours", x = "Artists", y = "Minutes")
+ggplot(top10artistsPaula, aes(reorder(artistName, totalmins), y = totalmins)) +
+  geom_segment(aes(xend = artistName, yend = 0),
+               color = "#1DB954", linewidth = 4) +
+  geom_point(size = 12, color = "#1DB954") +
+  geom_text(aes(label = paste0(totalhours, "h")),
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 6000, by = 600)) +
+  coord_flip() +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954", size = 16)) +
+  labs(title = "Paula's Top 10 Artists in hours", x = "Artists", y = "Minutes")
+
+
+# Top10 songs
+top10songsEmma <- streaming2024Emma %>%
+  group_by(artistName, trackName) %>%
+  summarize(total_mins = sum(minutes), .groups = "drop") %>%
+  arrange(desc(total_mins)) %>%
+  mutate(total_hours = round(total_mins / 60, 2)) %>%
+  slice_head(n =10) %>%
+  mutate(songlabel = glue("{trackName}\n{artistName}"))
+top10songsPaula <- streaming2024Paula %>%
+  group_by(artistName, trackName) %>%
+  summarize(total_mins = sum(minutes), .groups = "drop") %>%
+  arrange(desc(total_mins)) %>%
+  mutate(total_hours = round(total_mins / 60, 2)) %>%
+  slice_head(n =10) %>%
+  mutate(songlabel = glue("{trackName}\n{artistName}"))
+
+# "lollipop" chart
+ggplot(top10songsEmma, aes(x = reorder(songlabel, total_mins), y = total_mins)) +
+  geom_segment(aes(xend = songlabel, yend = 0),
+               color = "#1DB954", linewidth = 1.5) +
+  geom_point(size = 8, color = "#1DB954") +
+  geom_text(aes(label = paste0(round(total_hours, 1), "h")), 
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 300, by = 60)) +
+  coord_flip() +
+  labs(title = "Emma's Top 10 Songs in hours", x = "Songs", y = "Minutes") +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954"),
+        axis.text.y = element_text(size = 9))
+ggplot(top10songsPaula, aes(x = reorder(songlabel, total_mins), y = total_mins)) +
+  geom_segment(aes(xend = songlabel, yend = 0),
+               color = "#1DB954", linewidth = 1.5) +
+  geom_point(size = 8, color = "#1DB954") +
+  geom_text(aes(label = paste0(round(total_hours, 1), "h")), 
+            color = "black", size = 2.75) +
+  scale_y_continuous(breaks = seq(0, 500, by = 60)) +
+  coord_flip() +
+  labs(title = "Paula's Top 10 Songs in hours", x = "Songs", y = "Minutes") +
+  theme_clean() +
+  theme(plot.title = element_text(face = "bold", color = "#1DB954"),
+        axis.text.y = element_text(size = 9))
+
+
+
+
+#### Time Series Analysis ####
+
+## tsibble package
+tsPaula <- dailyPaula %>%
+  mutate(date = as_date(date)) %>%
+  as_tsibble(index = dailyjam)
+tsEmma <- dailyEmma %>%
+  mutate(date = as_date(date)) %>%
+  as_tsibble(index = dailyjam)
+
+# plot daily streaming throughout time
 ggplot() +
-  geom_line(data = tsPaula, aes(ds, y, color = "Paula")) +
-  geom_line(data = tsEmma, aes(ds, y, color = "Emma"))
+  geom_line(data = tsPaula, aes(date, dailyjam, color = "Paula"),
+            linewidth = 1.05, alpha = 0.8) +
+  geom_line(data = tsEmma, aes(date, dailyjam, color = "Emma"),
+            linewidth = 1.05, alpha = 0.8) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  theme_gdocs() +
+  theme(plot.title = element_text(face = "bold"),
+        axis.text.x = element_text(face = "bold"),
+        axis.text.y = element_text(face = "bold")) +
+  labs(title = "Evolution of Streaming Habits", y ="Minutes per day",
+       x = "Date", color = "Person")
+# basic info: describe it
  
-
 
 # Density Ridge Plot
 combinedstreaming2024month <- bind_rows(
@@ -384,39 +514,7 @@ ggplot(combinedstreaming2024month, aes(x = y, y = month, fill = user)) +
   theme_ridges() +
   theme(legend.position = "none")
 
-# Top10 songs
-top10Emma <- streaming2024Emma %>%
-  group_by(artistName, trackName) %>%
-  summarize(total_mins = sum(minutes), .groups = "drop") %>%
-  arrange(desc(total_mins)) %>%
-  mutate(total_hours = round(total_mins / 60, 2)) %>%
-  slice_head(n =10)
-top10Paula <- streaming2024Paula %>%
-  group_by(artistName, trackName) %>%
-  summarize(total_mins = sum(minutes), .groups = "drop") %>%
-  arrange(desc(total_mins)) %>%
-  mutate(total_hours = round(total_mins / 60, 2)) %>%
-  slice_head(n =10)
-
-ggplot(top10Emma, aes(x = reorder(trackName, total_mins), y = total_mins)) +
-  geom_segment(aes(xend = trackName, yend = 0),
-               color = "#FF9AA2", linewidth = 1.5) +
-  geom_point(size = 8, color = "#FFB7B2", alpha = 0.9) +
-  geom_text(aes(label = paste0(round(total_hours, 1), "h")), 
-            color = "white", size = 3) +
-  coord_flip() +
-  labs(title = "Emma's Top 10 Most-Listened Tracks",
-       subtitle = "Total listening time in hours",
-       x = "", y = "Minutes") +
-  theme_clean() +
-  theme(plot.title = element_text(face = "bold", color = "#FF85A2"),
-        panel.grid.major.y = element_blank())
-
-# Top10 artists
-
-
-# Time Series Analysis
-## using the prophet package, first prepare the data to be understood by it
+# using the prophet package, first prepare the data to be understood by it
 prophetPaula <- dailyPaula %>%
   rename(ds = date, y = dailyjam) %>%
   select(ds, y)
@@ -439,4 +537,3 @@ forecastEmma <- predict(modelEmma, futureEmma)
 plot(modelEmma, forecastEmma)
 prophet_plot_components(modelEmma, forecastEmma)
 dyplot.prophet(modelEmma, forecastEmma)
-
