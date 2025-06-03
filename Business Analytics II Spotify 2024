@@ -296,7 +296,7 @@ top10ArtistsCommon <- chisquare %>%
 ArtistsCommonTable <- chisquare %>%
   filter(artistName %in% top10ArtistsCommon) %>%
   count(person, artistName) %>%
-  tidyr::pivot_wider(names_from = person, values_from = n, values_fill = 0) %>%
+  pivot_wider(names_from = person, values_from = n, values_fill = 0) %>%
   column_to_rownames("artistName")
 # just by viewing the table we barely share anything
 
